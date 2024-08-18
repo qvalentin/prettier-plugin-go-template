@@ -120,7 +120,7 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
     const options = optionsA as ParserOptions;
 
     let parser = "html"
-    if (options.filepath.endsWith("yaml")) {
+    if (options.filepath?.endsWith("yaml")) {
       parser = "yaml"
     }
 
