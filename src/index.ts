@@ -8,6 +8,7 @@ import {
 } from "prettier";
 import { builders, utils } from "prettier/doc";
 import { parsers as htmlParsers } from "prettier/parser-html";
+import { parsers as yamlParsers } from "prettier/parser-yaml";
 import {
   GoBlock,
   GoInline,
@@ -24,6 +25,7 @@ import {
 } from "./parse";
 
 const htmlParser = htmlParsers.html;
+const yamlParser = yamlParsers.yaml;
 const PLUGIN_KEY = "go-template";
 
 type ExtendedParserOptions = ParserOptions<GoNode> &
@@ -76,15 +78,23 @@ export const parsers = {
 export const printers = {
   [PLUGIN_KEY]: <Printer<GoNode>>{
     print: (path, options: ExtendedParserOptions, print) => {
+      console.log("print");
       const node = path.getNode();
+
 
       switch (node?.type) {
         case "inline":
+          console.log("Node to print inline", node.statement)
           return printInline(node, path, options, print);
         case "double-block":
+          console.log("Node to print double-block")
           return printMultiBlock(node, path, print);
         case "unformattable":
+          console.log("Node to print unformattable", node.content)
           return printUnformattable(node, options);
+        // case "root":
+        // TODO: why does this happen?
+        //   return printMultiBlock(node, path, print);
       }
 
       throw new Error(
@@ -95,6 +105,7 @@ export const printers = {
       try {
         return embed(path, options);
       } catch (e) {
+        console.log("hi")
         console.error("Formatting failed.", e);
         throw e;
       }
@@ -107,6 +118,11 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
     const node = path.getNode();
 
     const options = optionsA as ParserOptions;
+
+    let parser = "html"
+    if (options.filepath.endsWith("yaml")) {
+      parser = "yaml"
+    }
 
     if (!node) {
       return undefined;
@@ -125,7 +141,7 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
 
     const html = await textToDoc(node.aliasedContent, {
       ...options,
-      parser: "html",
+      parser: parser,
       parentParser: "go-template",
     });
 
@@ -139,15 +155,15 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
 
         Object.keys(node.children).forEach(
           (key) =>
-            (result = doc.utils.mapDoc(result, (docNode) =>
-              typeof docNode !== "string" || !docNode.includes(key)
-                ? docNode
-                : [
-                    docNode.substring(0, docNode.indexOf(key)),
-                    path.call(print, "children", key),
-                    docNode.substring(docNode.indexOf(key) + key.length),
-                  ],
-            )),
+          (result = doc.utils.mapDoc(result, (docNode) =>
+            typeof docNode !== "string" || !docNode.includes(key)
+              ? docNode
+              : [
+                docNode.substring(0, docNode.indexOf(key)),
+                path.call(print, "children", key),
+                docNode.substring(docNode.indexOf(key) + key.length),
+              ],
+          )),
         );
 
         return result;
@@ -265,13 +281,13 @@ function printStatement(
 
   const content = shouldBreak
     ? statement
-        .trim()
-        .split("\n")
-        .map((line, _, array) =>
-          array.indexOf(line) === array.length - 1
-            ? [line.trim(), builders.softline]
-            : builders.indent([line.trim(), builders.softline]),
-        )
+      .trim()
+      .split("\n")
+      .map((line, _, array) =>
+        array.indexOf(line) === array.length - 1
+          ? [line.trim(), builders.softline]
+          : builders.indent([line.trim(), builders.softline]),
+      )
     : [statement.trim()];
 
   return builders.group(
@@ -298,6 +314,10 @@ function hasPrettierIgnoreLine(node: GoNode) {
   const regex = new RegExp(
     `(?:<!--|{{).*?prettier-ignore.*?(?:-->|}})\n.*${child.id}`,
   );
+
+  if (!parent) {
+    return false
+  }
 
   return !!parent.aliasedContent.match(regex);
 }
@@ -335,7 +355,7 @@ function getFirstBlockParent(node: Exclude<GoNode, GoRoot>): {
   let previous = node;
   let current = node.parent;
 
-  while (!isBlock(current) && !isRoot(current)) {
+  while (current && !isBlock(current) && !isRoot(current)) {
     previous = current;
     current = current.parent;
   }
