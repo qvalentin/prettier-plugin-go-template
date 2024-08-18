@@ -18,6 +18,18 @@
     {
       "type": "node",
       "request": "launch",
+      "name": "Debug debug.ts file",
+      "program": "${workspaceRoot}/lib/debug.js",
+      "cwd": "${workspaceRoot}",
+      "console": "integratedTerminal",
+      "sourceMaps": true,
+      "smartStep": true,
+      "preLaunchTask": "build",
+      "outFiles": ["${workspaceRoot}/lib/*.js"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
       "name": "Debug test",
       "program": "${workspaceRoot}/node_modules/jest/bin/jest.js",
       "args": [],

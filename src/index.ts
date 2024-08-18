@@ -81,7 +81,6 @@ export const printers = {
       // console.log("print");
       const node = path.getNode();
 
-
       switch (node?.type) {
         case "inline":
           // console.log("Node to print inline", node.statement)
@@ -92,9 +91,6 @@ export const printers = {
         case "unformattable":
           // console.log("Node to print unformattable", node.content)
           return printUnformattable(node, options);
-        // case "root":
-        // TODO: why does this happen?
-        //   return printMultiBlock(node, path, print);
       }
 
       throw new Error(
@@ -105,7 +101,7 @@ export const printers = {
       try {
         return embed(path, options);
       } catch (e) {
-        console.log("hi")
+        console.log("hi");
         console.error("Formatting failed.", e);
         throw e;
       }
@@ -118,11 +114,6 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
     const node = path.getNode();
 
     const options = optionsA as ParserOptions;
-
-    let parser = "html"
-    if (options.filepath?.endsWith("yaml")) {
-      parser = "yaml"
-    }
 
     if (!node) {
       return undefined;
@@ -139,14 +130,18 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
       return undefined;
     }
 
-    const html = await textToDoc(node.aliasedContent, {
-      ...options,
-      parser: parser,
-      parentParser: "go-template",
-    });
+    let parser = "html";
+    let container = node.aliasedContent;
+    if (!options.filepath?.endsWith("yaml")) {
+      container = await textToDoc(node.aliasedContent, {
+        ...options,
+        parser: parser,
+        parentParser: "go-template",
+      });
+    }
 
     const mapped = utils.stripTrailingHardline(
-      utils.mapDoc(html, (currentDoc) => {
+      utils.mapDoc(container, (currentDoc) => {
         if (typeof currentDoc !== "string") {
           return currentDoc;
         }
@@ -155,15 +150,15 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
 
         Object.keys(node.children).forEach(
           (key) =>
-          (result = doc.utils.mapDoc(result, (docNode) =>
-            typeof docNode !== "string" || !docNode.includes(key)
-              ? docNode
-              : [
-                docNode.substring(0, docNode.indexOf(key)),
-                path.call(print, "children", key),
-                docNode.substring(docNode.indexOf(key) + key.length),
-              ],
-          )),
+            (result = doc.utils.mapDoc(result, (docNode) =>
+              typeof docNode !== "string" || !docNode.includes(key)
+                ? docNode
+                : [
+                    docNode.substring(0, docNode.indexOf(key)),
+                    path.call(print, "children", key),
+                    docNode.substring(docNode.indexOf(key) + key.length),
+                  ],
+            )),
         );
 
         return result;
@@ -206,6 +201,8 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
     });
   };
 };
+
+function printYamlColon() {}
 
 type PrintFn = (path: FastPath<GoNode>) => builders.Doc;
 
@@ -281,13 +278,13 @@ function printStatement(
 
   const content = shouldBreak
     ? statement
-      .trim()
-      .split("\n")
-      .map((line, _, array) =>
-        array.indexOf(line) === array.length - 1
-          ? [line.trim(), builders.softline]
-          : builders.indent([line.trim(), builders.softline]),
-      )
+        .trim()
+        .split("\n")
+        .map((line, _, array) =>
+          array.indexOf(line) === array.length - 1
+            ? [line.trim(), builders.softline]
+            : builders.indent([line.trim(), builders.softline]),
+        )
     : [statement.trim()];
 
   return builders.group(
@@ -316,7 +313,7 @@ function hasPrettierIgnoreLine(node: GoNode) {
   );
 
   if (!parent) {
-    return false
+    return false;
   }
 
   return !!parent.aliasedContent.match(regex);
