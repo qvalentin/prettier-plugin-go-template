@@ -78,19 +78,19 @@ export const parsers = {
 export const printers = {
   [PLUGIN_KEY]: <Printer<GoNode>>{
     print: (path, options: ExtendedParserOptions, print) => {
-      console.log("print");
+      // console.log("print");
       const node = path.getNode();
 
 
       switch (node?.type) {
         case "inline":
-          console.log("Node to print inline", node.statement)
+          // console.log("Node to print inline", node.statement)
           return printInline(node, path, options, print);
         case "double-block":
-          console.log("Node to print double-block")
+          // console.log("Node to print double-block")
           return printMultiBlock(node, path, print);
         case "unformattable":
-          console.log("Node to print unformattable", node.content)
+          // console.log("Node to print unformattable", node.content)
           return printUnformattable(node, options);
         // case "root":
         // TODO: why does this happen?

@@ -161,6 +161,7 @@ export const parseGoTemplate: Parser<GoNode>["parse"] = (text, options) => {
 
   root.aliasedContent = aliasNodeContent(root);
 
+  debugger;
   return root;
 };
 

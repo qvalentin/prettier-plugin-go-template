@@ -13,20 +13,20 @@ const prettify = (
     ...options,
   });
 
-const testFolder = join(__dirname, "tests");
+const testFolder = join(__dirname, "tests-helm");
 const tests = readdirSync(testFolder);
 
 describe("format", () => {
   tests.forEach((test) =>
     it(test, async () => {
       const path = join(testFolder, test);
-      const input = readFileSync(join(path, "input.html")).toString();
-      const expected = readFileSync(join(path, "expected.html")).toString();
+      const input = readFileSync(join(path, "input.yaml")).toString();
+      const expected = readFileSync(join(path, "expected.yaml")).toString();
 
       const configPath = join(path, "config.json");
       const configString =
         existsSync(configPath) && readFileSync(configPath)?.toString();
-      const configObject = configString ? JSON.parse(configString) : {};
+      const configObject = configString ? JSON.parse(configString) : { filepath: "input.yaml" };
 
       const expectedError = expected.match(/Error\("(?<message>.*)"\)/)?.groups
         ?.message;
