@@ -1,0 +1,4 @@
+# Basic YAML interpolation
+key: {{ .Value }}
+another: "{{ .Value }}"
+part: prefix-{{ .Value }}-suffix

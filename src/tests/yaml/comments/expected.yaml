@@ -1,0 +1,7 @@
+# Comments in YAML
+key: val # inline comment
+# standalone comment
+{{ if .X }}
+# comment inside block
+sub: {{ .X }}
+{{ end }}

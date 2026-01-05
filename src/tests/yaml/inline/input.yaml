@@ -1,0 +1,6 @@
+# Inline blocks and expressions
+image: "{{ .Registry }}/{{ .Repository }}:{{ .Tag }}"
+command: [{{ range .Args }}"{{ . }}",{{ end }}]
+env:
+  - name: APP_KEY
+    value: {{ .Key | default "secret" }}

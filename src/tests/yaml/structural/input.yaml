@@ -1,0 +1,11 @@
+# Structural blocks in YAML
+metadata:
+  name: {{ .Name }}
+  {{ if .Labels }}
+  labels:
+    {{ range .Labels }}
+    {{ .Key }}: {{ .Value }}
+    {{ end }}
+  {{ end }}
+spec:
+  replicas: {{ .Replicas }}

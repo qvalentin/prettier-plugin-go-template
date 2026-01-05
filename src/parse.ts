@@ -2,6 +2,10 @@ import { Parser } from "prettier";
 import { createIdGenerator } from "./create-id-generator";
 
 export const parseGoTemplate: Parser<GoNode>["parse"] = (text, options) => {
+  const isYaml =
+    options.filepath?.endsWith(".yaml") ||
+    options.filepath?.endsWith(".yml") ||
+    (options as any).parser === "go-template-yaml";
   const regex =
     /{{(?<startdelimiter>-|<|%|\/\*)?\s*(?<statement>(?<keyword>if|range|block|with|define|end|else|prettier-ignore-start|prettier-ignore-end)?[\s\S]*?)\s*(?<endDelimiter>-|>|%|\*\/)?}}|(?<unformattableScript><(script)((?!<)[\s\S])*>((?!<\/script)[\s\S])*?{{[\s\S]*?<\/(script)>)|(?<unformattableStyle><(style)((?!<)[\s\S])*>((?!<\/style)[\s\S])*?{{[\s\S]*?<\/(style)>)/g;
   const root: GoRoot = {
@@ -16,7 +20,7 @@ export const parseGoTemplate: Parser<GoNode>["parse"] = (text, options) => {
   const nodeStack: (GoBlock | GoRoot)[] = [root];
   const getId = createIdGenerator();
 
-  for (let match of text.matchAll(regex)) {
+  for (const match of text.matchAll(regex)) {
     const current = last(nodeStack);
     const keyword = match.groups?.keyword as GoBlockKeyword | undefined;
     const statement = match.groups?.statement;
@@ -70,7 +74,7 @@ export const parseGoTemplate: Parser<GoNode>["parse"] = (text, options) => {
 
       current.length = match[0].length + match.index - current.index;
       current.content = text.substring(current.contentStart, match.index);
-      current.aliasedContent = aliasNodeContent(current);
+      current.aliasedContent = aliasNodeContent(current, isYaml);
       current.end = inline;
 
       if (current.parent.type === "double-block") {
@@ -89,7 +93,7 @@ export const parseGoTemplate: Parser<GoNode>["parse"] = (text, options) => {
         start: inline,
         end: null,
         children: {},
-        keyword: keyword,
+        keyword,
         index: match.index,
         parent: current.parent,
         contentStart: match.index + match[0].length,
@@ -126,7 +130,7 @@ export const parseGoTemplate: Parser<GoNode>["parse"] = (text, options) => {
       current.id = getId();
       current.length = match[0].length + match.index - current.index;
       current.content = text.substring(current.contentStart, match.index);
-      current.aliasedContent = aliasNodeContent(current);
+      current.aliasedContent = aliasNodeContent(current, isYaml);
 
       nodeStack.pop();
       nodeStack.push(nextChild);
@@ -159,23 +163,37 @@ export const parseGoTemplate: Parser<GoNode>["parse"] = (text, options) => {
     throw Error("Missing end block.");
   }
 
-  root.aliasedContent = aliasNodeContent(root);
+  root.aliasedContent = aliasNodeContent(root, isYaml);
 
   return root;
 };
 
-function aliasNodeContent(current: GoBlock | GoRoot): string {
+function aliasNodeContent(current: GoBlock | GoRoot, isYaml: boolean): string {
   let result = current.content;
 
   Object.entries(current.children)
     .sort(([_, node1], [__, node2]) => node2.index - node1.index)
-    .forEach(
-      ([id, node]) =>
-        (result =
-          result.substring(0, node.index - current.contentStart) +
-          id +
-          result.substring(node.index + node.length - current.contentStart)),
-    );
+    .forEach(([id, node]) => {
+      let replacement = id;
+      if (isBlock(node)) {
+        const startIndex = node.index - current.contentStart;
+        const prefix = result.substring(0, startIndex);
+        const lastLineIndex = prefix.lastIndexOf("\n");
+        const checkString =
+          lastLineIndex !== -1 ? prefix.substring(lastLineIndex + 1) : prefix;
+        if (checkString.trim().length === 0) {
+          node.isStandalone = true;
+          if (isYaml) {
+            replacement = "# " + id;
+          }
+        }
+      }
+
+      result =
+        result.substring(0, node.index - current.contentStart) +
+        replacement +
+        result.substring(node.index + node.length - current.contentStart);
+    });
 
   return result;
 }
@@ -233,6 +251,7 @@ export interface GoBlock extends GoBaseNode<"block">, WithDelimiter {
   content: string;
   aliasedContent: string;
   contentStart: number;
+  isStandalone?: boolean;
 }
 
 export interface GoMultiBlock extends GoBaseNode<"double-block"> {

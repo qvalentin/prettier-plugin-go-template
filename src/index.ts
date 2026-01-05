@@ -8,6 +8,7 @@ import {
 } from "prettier";
 import { builders, utils } from "prettier/doc";
 import { parsers as htmlParsers } from "prettier/parser-html";
+import { parsers as yamlParsers } from "prettier/parser-yaml";
 import {
   GoBlock,
   GoInline,
@@ -25,6 +26,7 @@ import {
 
 const htmlParser = htmlParsers.html;
 const PLUGIN_KEY = "go-template";
+const PLUGIN_KEY_YAML = "go-template-yaml";
 
 type ExtendedParserOptions = ParserOptions<GoNode> &
   PrettierPluginGoTemplateParserOptions;
@@ -61,6 +63,18 @@ export const languages: SupportLanguage[] = [
     ],
     vscodeLanguageIds: ["gotemplate", "gohtml", "GoTemplate", "GoHTML"],
   },
+  {
+    name: "GoTemplateYAML",
+    parsers: [PLUGIN_KEY_YAML],
+    extensions: [
+      ".yaml.gotmpl",
+      ".yaml.tpl",
+      ".yml.tpl",
+      ".yaml",
+      ".yml",
+    ],
+    vscodeLanguageIds: ["gotemplate-yaml", "helm", "ansible", "yaml"],
+  },
 ];
 export const parsers = {
   [PLUGIN_KEY]: <Parser<GoNode>>{
@@ -72,34 +86,47 @@ export const parsers = {
     locStart: (node) => node.index,
     locEnd: (node) => node.index + node.length,
   },
-};
-export const printers = {
-  [PLUGIN_KEY]: <Printer<GoNode>>{
-    print: (path, options: ExtendedParserOptions, print) => {
-      const node = path.getNode();
-
-      switch (node?.type) {
-        case "inline":
-          return printInline(node, path, options, print);
-        case "double-block":
-          return printMultiBlock(node, path, print);
-        case "unformattable":
-          return printUnformattable(node, options);
-      }
-
-      throw new Error(
-        `An error occured during printing. Found invalid node ${node?.type}.`,
-      );
-    },
-    embed: (path, options) => {
-      try {
-        return embed(path, options);
-      } catch (e) {
-        console.error("Formatting failed.", e);
-        throw e;
-      }
-    },
+  [PLUGIN_KEY_YAML]: <Parser<GoNode>>{
+    astFormat: PLUGIN_KEY,
+    preprocess: (text) =>
+      text.endsWith("\n") ? text.slice(0, text.length - 1) : text,
+    parse: parseGoTemplate,
+    locStart: (node) => node.index,
+    locEnd: (node) => node.index + node.length,
   },
+};
+const printer: Printer<GoNode> = {
+  print: (path, options: ExtendedParserOptions, print) => {
+    const node = path.getNode();
+
+    switch (node?.type) {
+      case "inline":
+        return printInline(node, path, options, print);
+      case "double-block":
+        return printMultiBlock(node, path, print);
+      case "unformattable":
+        return printUnformattable(node, options);
+    }
+
+    throw new Error(
+      `An error occured during printing. Found invalid node ${
+        (node as any)?.type
+      }.`,
+    );
+  },
+  embed: (path, options) => {
+    try {
+      return embed(path, options);
+    } catch (e) {
+      console.error("Formatting failed.", e);
+      throw e;
+    }
+  },
+};
+
+export const printers = {
+  [PLUGIN_KEY]: printer,
+  [PLUGIN_KEY_YAML]: printer,
 };
 
 const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
@@ -123,36 +150,29 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
       return undefined;
     }
 
-    const html = await textToDoc(node.aliasedContent, {
-      ...options,
-      parser: "html",
-      parentParser: "go-template",
-    });
+    const isYaml =
+      (options as any).parser === "go-template-yaml" ||
+      options.filepath?.endsWith(".yaml") ||
+      options.filepath?.endsWith(".yml");
 
-    const mapped = utils.stripTrailingHardline(
-      utils.mapDoc(html, (currentDoc) => {
-        if (typeof currentDoc !== "string") {
-          return currentDoc;
-        }
+    const isStandalone = isYaml && isBlock(node) && node.isStandalone;
 
-        let result: builders.Doc = currentDoc;
-
-        Object.keys(node.children).forEach(
-          (key) =>
-            (result = doc.utils.mapDoc(result, (docNode) =>
-              typeof docNode !== "string" || !docNode.includes(key)
-                ? docNode
-                : [
-                    docNode.substring(0, docNode.indexOf(key)),
-                    path.call(print, "children", key),
-                    docNode.substring(docNode.indexOf(key) + key.length),
-                  ],
-            )),
-        );
-
-        return result;
-      }),
-    );
+    const mapped =
+      isYaml && isBlock(node)
+        ? unmask(node.aliasedContent.trim(), node, path, print, isYaml)
+        : unmask(
+            utils.stripTrailingHardline(
+              await textToDoc(node.aliasedContent, {
+                ...options,
+                parser: isYaml ? "yaml" : "html",
+                parentParser: isYaml ? "go-template-yaml" : "go-template",
+              }),
+            ),
+            node,
+            path,
+            print,
+            isYaml,
+          );
 
     if (isRoot(node)) {
       return [mapped, builders.hardline];
@@ -169,11 +189,13 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
       ];
     }
 
+    const line = isStandalone ? builders.hardline : builders.softline;
+
     const content = node.aliasedContent.trim()
-      ? builders.indent([builders.softline, mapped])
+      ? builders.indent([line, mapped])
       : "";
 
-    const result = [startStatement, content, builders.softline, endStatement];
+    const result = [startStatement, content, line, endStatement];
 
     const emptyLine =
       !!node.end && isFollowedByEmptyLine(node.end, options.originalText)
@@ -186,12 +208,55 @@ const embed: Exclude<Printer<GoNode>["embed"], undefined> = () => {
 
     return builders.group([builders.group(result), emptyLine], {
       shouldBreak:
-        !!node.end && hasNodeLinebreak(node.end, options.originalText),
+        isStandalone ||
+        (!!node.end && hasNodeLinebreak(node.end, options.originalText)),
     });
   };
 };
 
 type PrintFn = (path: FastPath<GoNode>) => builders.Doc;
+
+function unmask(
+  docToMap: builders.Doc,
+  node: GoBlock | GoRoot,
+  path: FastPath<GoNode>,
+  print: PrintFn,
+  isYaml: boolean,
+): builders.Doc {
+  return utils.mapDoc(docToMap, (currentDoc) => {
+    if (typeof currentDoc !== "string") {
+      return currentDoc;
+    }
+
+    let result: builders.Doc = currentDoc;
+
+    Object.keys(node.children).forEach((key) => {
+      const child = node.children[key];
+      result = utils.mapDoc(result, (docNode) => {
+        if (typeof docNode !== "string" || !docNode.includes(key)) {
+          return docNode;
+        }
+
+        const index = docNode.indexOf(key);
+        let startCut = index;
+
+        if (isYaml && isBlock(child)) {
+          if (index >= 2 && docNode.substring(index - 2, index) === "# ") {
+            startCut = index - 2;
+          }
+        }
+
+        return [
+          docNode.substring(0, startCut),
+          (path as any).call(print, "children", key),
+          docNode.substring(index + key.length),
+        ];
+      });
+    });
+
+    return result;
+  });
+}
 
 function printMultiBlock(
   node: GoMultiBlock,
